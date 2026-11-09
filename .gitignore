@@ -1,0 +1,9 @@
+.env
+client/node_modules
+client/.svelte-kit
+client/build
+.env.*
+!.env.example
+.DS_Store
+/server/server
+/server/bin/
