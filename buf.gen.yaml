@@ -1,0 +1,7 @@
+version: v2
+clean: true
+plugins:
+  # protoc-gen-go is pinned as a tool in server/go.mod, so nothing is installed globally.
+  - local: ["go", "-C", "server", "tool", "protoc-gen-go"]
+    out: server/gen
+    opt: paths=source_relative

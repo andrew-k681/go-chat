@@ -36,6 +36,10 @@ type Config struct {
 	TURNTTL      time.Duration
 	StaticDir    string
 	LogLevel     slog.Level
+
+	// Room events go to Kafka only when Kafka.Brokers is set.
+	Kafka     Kafka
+	EventsKey Secret // HMAC key that turns room ids into room_ref
 }
 
 // Load reads the configuration from the real environment.
@@ -47,12 +51,7 @@ func Load() (Config, error) {
 // All problems are collected and returned together via errors.Join.
 func LoadFrom(getenv func(string) string) (Config, error) {
 	var errs []error
-	get := func(key, def string) string {
-		if v := strings.TrimSpace(getenv(key)); v != "" {
-			return v
-		}
-		return def
-	}
+	get := withDefault(getenv)
 
 	cfg := Config{
 		Addr:       get("ADDR", ":8080"),
@@ -92,11 +91,33 @@ func LoadFrom(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	if raw := get("LOG_LEVEL", "info"); cfg.LogLevel.UnmarshalText([]byte(raw)) != nil {
-		errs = append(errs, fmt.Errorf("LOG_LEVEL=%q: want debug, info, warn or error", raw))
+	cfg.LogLevel, errs = logLevel(get("LOG_LEVEL", "info"), errs)
+
+	cfg.Kafka, errs = loadKafka(get, errs)
+	cfg.EventsKey = Secret(get("EVENTS_KEY", ""))
+	if len(cfg.Kafka.Brokers) > 0 && len(cfg.EventsKey) < 32 {
+		errs = append(errs, errors.New("EVENTS_KEY: required (at least 32 chars) when KAFKA_BROKERS is set"))
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// withDefault wraps getenv: trimmed value, or def when unset or blank.
+func withDefault(getenv func(string) string) func(key, def string) string {
+	return func(key, def string) string {
+		if v := strings.TrimSpace(getenv(key)); v != "" {
+			return v
+		}
+		return def
+	}
+}
+
+func logLevel(raw string, errs []error) (slog.Level, []error) {
+	var l slog.Level
+	if l.UnmarshalText([]byte(raw)) != nil {
+		errs = append(errs, fmt.Errorf("LOG_LEVEL=%q: want debug, info, warn or error", raw))
+	}
+	return l, errs
 }
 
 // splitList splits a comma-separated value, trimming spaces and dropping empty items.

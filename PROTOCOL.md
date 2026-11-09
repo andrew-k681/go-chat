@@ -105,3 +105,26 @@ Vite proxies `/api` and `/ws` to `http://localhost:8080` (override with
 `API_TARGET=http://host:port npm run dev`). Run the Go server on :8080 and open
 http://localhost:5173. To test multiple peers locally, use two browser windows
 (or one normal window and one incognito window).
+
+## Room events (Kafka, optional)
+
+When `KAFKA_BROKERS` is set, the server publishes room lifecycle events to the
+`room-events` topic. The schema is `proto/gochat/events/v1/events.proto`. The value is
+a protobuf `RoomEvent`, the key is `room_ref`, and the `content-type` header names
+the message type. The call path never waits for Kafka: if Kafka is slow or down,
+events are dropped and counted.
+
+- **`room_ref` = HMAC-SHA256(`EVENTS_KEY`, room id).** The room id is the invite
+  credential, so it never leaves the server. Events also carry no names, IPs or SDP.
+- **Ordering:** a room's events share a key, so they land on one partition, in order.
+- **Consumer:** `server/cmd/stats` keeps the aggregates in memory, never commits
+  offsets, and replays the topic on every start. It serves `GET /stats` with
+  `Authorization: Bearer $STATS_TOKEN`.
+- **Schema changes:** add fields with new numbers, and never reuse or renumber them.
+  `make lint` and `make breaking` (against `main`) check this. Consumers count
+  event kinds they don't know yet instead of failing.
+
+Dev: run `make kafka-up` (Apache Kafka in KRaft mode + Kafka UI at http://localhost:8088), set
+`KAFKA_BROKERS=localhost:19092 EVENTS_KEY=…` for the server, and run
+`cd server && KAFKA_BROKERS=localhost:19092 STATS_TOKEN=… go run ./cmd/stats`.
+Regenerate code after editing the .proto with `make generate`.

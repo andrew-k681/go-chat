@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package gochat.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/andrew-k681/go-chat/server/gen/gochat/events/v1;eventsv1";
+
+// RoomEvent is one record on the "room-events" Kafka topic. The record key is
+// room_ref, so all events of one room land on one partition, in order.
+//
+// Evolving this schema: add fields with new numbers, never change or reuse a
+// number, and mark removed ones `reserved`. `make breaking` checks this.
+message RoomEvent {
+  // Unique per event, so consumers can drop duplicates.
+  string event_id = 1;
+  // HMAC-SHA256(EVENTS_KEY, room id). Never the room id itself: that is the
+  // invite credential.
+  string room_ref = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+
+  oneof kind {
+    RoomCreated room_created = 10;
+    PeerJoined peer_joined = 11;
+    PeerLeft peer_left = 12;
+    RoomExpired room_expired = 13;
+    JoinRejected join_rejected = 14;
+  }
+}
+
+message RoomCreated {}
+
+// No display names or IP addresses: events carry no personal data.
+message PeerJoined {
+  string peer_id = 1;
+  // Peers in the room after this join.
+  uint32 peers_now = 2;
+}
+
+message PeerLeft {
+  string peer_id = 1;
+  // Peers in the room after this leave.
+  uint32 peers_now = 2;
+}
+
+// The room stayed empty for ROOM_TTL and was deleted.
+message RoomExpired {}
+
+message JoinRejected {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_ROOM_FULL = 1;
+  }
+  Reason reason = 1;
+}
